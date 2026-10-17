@@ -52,9 +52,15 @@ tests, by `logring`'s simulated card, and later by a `make-image` CLI step):
 ```sh
 just test    # cargo test --features std (host) + a no_std build check for the default build
 just lint    # fmt --check, clippy -D warnings (std and no_std)
+just fuzz    # cargo-fuzz (nightly) on the mount/walk/create paths; `just fuzz mount` for garbage images
 just install # library only: nothing to install on this PC
 just deploy  # bring this PC up to main
 ```
+
+Examples: `cargo run --features std --example make_image -- card.img 1024` makes an SD-style image with a
+README.txt and a ring file; `--example inspect -- card.img` mounts, lists and checks any image. A Linux kernel
+mount without root: `udisksctl loop-setup -f card.img` (udisks mounts the partition under `/run/media`),
+`udisksctl unmount -b /dev/loopNp1`, `udisksctl loop-delete -b /dev/loopN`.
 
 Validating against real tools (`fsck.exfat` from exfatprogs, a Linux kernel mount, Windows chkdsk, macOS Disk
 Utility) needs those tools on a PC; say in the report which checks ran against them versus only against this

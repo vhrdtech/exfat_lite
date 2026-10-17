@@ -16,6 +16,10 @@ lint:
     cargo clippy --all-targets --features std -- -D warnings
     cargo clippy --no-default-features --target thumbv8m.main-none-eabihf -- -D warnings
 
+# Fuzz the mount/walk/create paths on patched and garbage images (nightly + cargo-fuzz); TARGET: mount or mount_patched
+fuzz TARGET="mount_patched" SECONDS="300":
+    cd fuzz && cargo +nightly fuzz run {{TARGET}} corpus/{{TARGET}} seeds/{{TARGET}} -- -max_total_time={{SECONDS}} -max_len=65536
+
 # Library only: nothing to install on this PC
 install: test
 

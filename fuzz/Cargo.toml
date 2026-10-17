@@ -1,0 +1,29 @@
+[package]
+name = "exfat_lite-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.exfat_lite]
+features = ["std"]
+path = ".."
+
+[[bin]]
+name = "mount"
+path = "fuzz_targets/mount.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mount_patched"
+path = "fuzz_targets/mount_patched.rs"
+test = false
+doc = false
+bench = false
