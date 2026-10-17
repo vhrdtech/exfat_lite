@@ -1,0 +1,18 @@
+[package]
+name = "exfat_lite"
+description = "A small no-alloc exFAT implementation for SD cards: format, mount, a preallocated contiguous file, a bounded directory walk, and a read-only virtual volume rendered per sector"
+version = "0.1.0"
+edition = "2024"
+authors = ["Roman Isaikin <roman@vhrd.tech>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/vhrdtech/exfat_lite"
+rust-version = "1.88"
+
+[features]
+default = []
+# Host-side use (ww_logring_export, the logring CLI, tests): an image-file backend, no RAM/flash limits assumed.
+std = []
+
+[dependencies]
+
+[dev-dependencies]
