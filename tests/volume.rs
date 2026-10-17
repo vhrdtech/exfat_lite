@@ -432,6 +432,55 @@ fn garbage_does_not_panic() {
     }
 }
 
+/// A FAT chain that loops on itself with a huge file length: every chain follower must stop at the cluster
+/// count instead of walking the loop for 2^40 bytes.
+#[test]
+fn cyclic_fat_chain_is_bounded() {
+    use exfat_lite::dir::{ENTRY_SIZE, STREAM_NO_FAT_CHAIN, set_checksum};
+    let mut bytes = vec![0u8; 4 * MB as usize];
+    let geometry = Geometry {
+        sectors_per_cluster_shift: 3,
+        boundary_unit_sectors: 128,
+    };
+    let mut dev = SliceDevice::new(&mut bytes);
+    let mut scratch = [0u8; 512];
+    let layout = block_on(format(
+        &mut dev,
+        &FormatParams::new(geometry, "LOOP", 9),
+        &mut scratch,
+    ))
+    .unwrap();
+    let mut vol = block_on(Volume::mount(dev)).unwrap();
+    let file = block_on(vol.create(&NewFile::new("loop.bin").with_data(b"x"))).unwrap();
+    let first = file.first_cluster;
+    // Patch the stream entry: FAT-chained, 1 TB long; fix the set checksum; FAT[first] = first.
+    let root = layout.cluster_lba(layout.root_cluster) as usize * 512;
+    let at = root + file.location.offset as usize;
+    let n = (file.secondary_count as usize + 1) * ENTRY_SIZE;
+    bytes[at + 32 + 1] &= !STREAM_NO_FAT_CHAIN;
+    bytes[at + 32 + 24..at + 32 + 32].copy_from_slice(&(1u64 << 40).to_le_bytes());
+    bytes[at + 32 + 8..at + 32 + 16].copy_from_slice(&(1u64 << 40).to_le_bytes());
+    let sum = set_checksum(&bytes[at..at + n]);
+    bytes[at + 2..at + 4].copy_from_slice(&sum.to_le_bytes());
+    let fat = layout.fat_lba() as usize * 512 + first as usize * 4;
+    bytes[fat..fat + 4].copy_from_slice(&first.to_le_bytes());
+
+    let dev = SliceDevice::new(&mut bytes);
+    let mut vol = block_on(Volume::mount(dev)).unwrap();
+    let file = block_on(vol.find("loop.bin")).unwrap().unwrap();
+    assert!(!file.no_fat_chain && file.data_length == 1 << 40);
+    let report = block_on(vol.check(WalkLimits::DEFAULT)).unwrap();
+    assert!(!report.clean && report.bad_allocations == 1, "{report:?}");
+    let mut buf = [0u8; 16];
+    assert!(matches!(
+        block_on(vol.read(&file, 1 << 39, &mut buf)),
+        Err(Error::Corrupt(_))
+    ));
+    assert_eq!(block_on(vol.read(&file, 0, &mut buf)).unwrap(), 16);
+    block_on(vol.delete(&file)).unwrap();
+    assert!(block_on(vol.find("loop.bin")).unwrap().is_none());
+}
+
 #[test]
 fn mounts_an_image_from_mkfs_exfat() {
     if Command::new("mkfs.exfat").arg("-V").output().is_err() {

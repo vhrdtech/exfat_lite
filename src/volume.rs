@@ -409,14 +409,14 @@ impl<D: BlockDevice> Volume<D> {
             return Err(Error::NotExfat);
         }
         dev.read(0, &mut buf).await.map_err(Error::Device)?;
-        let (partition_lba, partition_len) = if BootSector::parse(&buf).is_some() {
-            (0, sectors)
-        } else if let Some((start, len)) = parse_mbr(&buf) {
+        let partition_lba = if BootSector::parse(&buf).is_some() {
+            0
+        } else if let Some((start, _len)) = parse_mbr(&buf) {
             if start >= sectors {
                 return Err(Error::NotExfat);
             }
             dev.read(start, &mut buf).await.map_err(Error::Device)?;
-            (start, len)
+            start
         } else {
             return Err(Error::NotExfat);
         };
@@ -435,10 +435,7 @@ impl<D: BlockDevice> Volume<D> {
             2 => return Err(Error::Unsupported(Unsupported::TexFat)),
             _ => return Err(Error::BootSector(BootProblem::Geometry)),
         }
-        if boot.volume_length > sectors - partition_lba
-            || boot.volume_length
-                > partition_len.max(boot.volume_length.min(sectors - partition_lba))
-        {
+        if boot.volume_length > sectors - partition_lba {
             return Err(Error::BootSector(BootProblem::VolumeTooLarge));
         }
         let spc = 1u64 << boot.sectors_per_cluster_shift;
@@ -1084,6 +1081,10 @@ impl<D: BlockDevice> Volume<D> {
         if info.no_fat_chain {
             return Ok(self.is_allocated(info.first_cluster, n).await?.then_some(n));
         }
+        // A chain longer than the heap loops: a bad allocation, not a hang.
+        if n > self.info.cluster_count as u64 {
+            return Ok(None);
+        }
         let mut cluster = info.first_cluster;
         for i in 0..n {
             if !self.bitmap_get(cluster).await? {
@@ -1265,6 +1266,9 @@ impl<D: BlockDevice> Volume<D> {
         let mut cluster_index = offset / cluster_bytes;
         let mut cluster = file.first_cluster;
         if !file.no_fat_chain {
+            if cluster_index >= self.info.cluster_count as u64 {
+                return Err(Error::Corrupt(Corrupt::FatChain));
+            }
             for _ in 0..cluster_index {
                 cluster = self
                     .fat_next(cluster)
@@ -1499,7 +1503,7 @@ impl<D: BlockDevice> Volume<D> {
                 self.bitmap_set_range(file.first_cluster, n, false).await?;
             } else {
                 let mut cluster = file.first_cluster;
-                for i in 0..n {
+                for i in 0..n.min(self.info.cluster_count as u64) {
                     self.bitmap_set_range(cluster, 1, false).await?;
                     if i + 1 < n {
                         match self.fat_next(cluster).await? {
