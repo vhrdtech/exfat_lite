@@ -1,12 +1,12 @@
 //! A mounted volume: directory iteration, lookup, a bounded walk, consistency checks, contiguous file
 //! creation and deletion, file reads. One sector buffer, no allocation.
 
-use crate::boot::{BootSector, boot_checksum_step, le32, parse_mbr, put32};
+use crate::boot::{BootSector, boot_checksum_step, le32, parse_mbr, put16, put32};
 use crate::device::{BlockDevice, SECTOR_SIZE, Sector};
 use crate::dir::{
     ENTRY_SIZE, EntryLocation, EntrySet, FileInfo, MAX_LABEL_UNITS, MAX_SECONDARIES,
     MAX_SET_ENTRIES, Name, TYPE_BITMAP, TYPE_END, TYPE_FILE, TYPE_IN_USE, TYPE_LABEL,
-    TYPE_SECONDARY, TYPE_UPCASE, Timestamp, attr,
+    TYPE_SECONDARY, TYPE_UPCASE, Timestamp, attr, set_checksum,
 };
 use crate::error::{BootProblem, Corrupt, Error, Limit, Unsupported};
 use crate::geometry::{BOOT_REGION_SECTORS, MAX_CLUSTER_COUNT};
@@ -308,6 +308,17 @@ pub enum Entry {
     Damaged(EntryLocation),
     /// Another in-use entry type (volume GUID, vendor entries...).
     Other(u8),
+}
+
+/// What [`Volume::free_space`] found: the free clusters in all, and the longest run of free clusters in a row.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FreeSpace {
+    /// Clusters whose bit is clear in the allocation bitmap.
+    pub free_clusters: u64,
+    /// First cluster of the longest free run (the lowest one of several equally long); 0 when nothing is free.
+    pub largest_run_first: u32,
+    /// Clusters in that run.
+    pub largest_run_len: u64,
 }
 
 /// A file to create: contiguous (`NoFatChain`), preallocated to `size` bytes, optionally with initial data.
@@ -800,6 +811,50 @@ impl<D: BlockDevice> Volume<D> {
             }
         }
         Err(Error::NoSpace)
+    }
+
+    /// Count the free clusters and find the longest free run, in one pass over the bitmap (bounded by its
+    /// size): where a big preallocated file can go when the volume already holds files.
+    pub async fn free_space(&mut self) -> Res<FreeSpace, D> {
+        let total = self.info.cluster_count as u64;
+        let bitmap_lba = self
+            .info
+            .cluster_lba(self.info.bitmap_cluster)
+            .ok_or(Error::Corrupt(Corrupt::Bitmap))?;
+        let sectors = total.div_ceil(SECTOR_SIZE as u64 * 8);
+        let mut fs = FreeSpace::default();
+        let mut run_first = 0u64;
+        let mut run_len = 0u64;
+        for s in 0..sectors {
+            self.load(bitmap_lba + s).await?;
+            let first_bit = s * SECTOR_SIZE as u64 * 8;
+            for (i, &byte) in self.buf.iter().enumerate() {
+                let base = first_bit + i as u64 * 8;
+                if base >= total {
+                    break;
+                }
+                for bit in 0..8u64 {
+                    let n = base + bit;
+                    if n >= total {
+                        break;
+                    }
+                    if byte & (1 << bit) != 0 {
+                        run_len = 0;
+                        continue;
+                    }
+                    fs.free_clusters += 1;
+                    if run_len == 0 {
+                        run_first = n;
+                    }
+                    run_len += 1;
+                    if run_len > fs.largest_run_len {
+                        fs.largest_run_len = run_len;
+                        fs.largest_run_first = run_first as u32 + 2;
+                    }
+                }
+            }
+        }
+        Ok(fs)
     }
 
     // ---- directories --------------------------------------------------------------------------------------
@@ -1472,6 +1527,54 @@ impl<D: BlockDevice> Volume<D> {
                 }
             }
         }
+    }
+
+    /// Set the `attr::*` bits of a file of the root directory (see [`Volume::set_attributes_in`]).
+    pub async fn set_attributes(&mut self, file: &FileInfo, attributes: u16) -> Res<FileInfo, D> {
+        let root = self.root();
+        self.set_attributes_in(root, file, attributes).await
+    }
+
+    /// Set the `attr::*` bits of the file whose entry set sits in the directory at `dir`: the primary entry is
+    /// rewritten with the new bits and the set checksum. The set is read back first and has to be the one
+    /// `file` describes (same checksum-valid set at the same place, same first cluster); the directory bit
+    /// can't be changed (`InvalidArgument`). Returns the file as it is now.
+    pub async fn set_attributes_in(
+        &mut self,
+        dir: DirCursor,
+        file: &FileInfo,
+        attributes: u16,
+    ) -> Res<FileInfo, D> {
+        if (attributes ^ file.attributes) & attr::DIRECTORY != 0 {
+            return Err(Error::InvalidArgument);
+        }
+        let mut set = EntrySet::new();
+        let mut cur = dir.at(file.location);
+        for _ in 0..=file.secondary_count as usize {
+            let Some((_, e)) = self.next_raw(&mut cur).await? else {
+                return Err(Error::Corrupt(Corrupt::EntrySet));
+            };
+            if !set.push(&e) {
+                return Err(Error::Corrupt(Corrupt::SecondaryCount));
+            }
+        }
+        let found = set
+            .parse_file(file.location)
+            .ok_or(Error::Corrupt(Corrupt::EntrySet))?;
+        if found.first_cluster != file.first_cluster
+            || found.secondary_count != file.secondary_count
+        {
+            return Err(Error::Corrupt(Corrupt::EntrySet));
+        }
+        put16(&mut set.bytes, 4, attributes);
+        let sum = set_checksum(set.as_bytes());
+        put16(&mut set.bytes, 2, sum);
+        let mut primary = [0u8; ENTRY_SIZE];
+        primary.copy_from_slice(set.entry(0));
+        self.write_raw(file.location, &primary).await?;
+        self.dev.flush().await.map_err(Error::Device)?;
+        set.parse_file(file.location)
+            .ok_or(Error::Corrupt(Corrupt::EntrySet))
     }
 
     /// Delete a file of the root directory: its entry set is marked unused and its clusters freed in the

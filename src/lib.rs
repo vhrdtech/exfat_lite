@@ -47,5 +47,6 @@ pub use geometry::{Geometry, Layout};
 #[cfg(feature = "std")]
 pub use image::{ImageFile, block_on};
 pub use volume::{
-    CheckReport, DirCursor, MAX_WALK_DEPTH, NewFile, Volume, VolumeInfo, WalkControl, WalkLimits,
+    CheckReport, DirCursor, FreeSpace, MAX_WALK_DEPTH, NewFile, Volume, VolumeInfo, WalkControl,
+    WalkLimits,
 };

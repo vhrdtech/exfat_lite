@@ -4,6 +4,8 @@
 
 ### Added
 
+- `Volume::free_space` (free clusters and the longest free run, one bitmap pass) and `Volume::set_attributes` /
+  `set_attributes_in` (new attribute bits, set checksum rewritten) (FS-4, P2628#16oct-1001d).
 - Format an SD card or image as MBR + exFAT with the SD Association geometry (boundary unit and cluster size by
   capacity, or the card's own allocation unit), both boot regions with checksums, FAT, allocation bitmap, the
   canonical up-case table (checksum `0xE619D30D`, kept as about 1 KB of range rules), root directory and volume

@@ -17,6 +17,10 @@ Status: ✅ done, 🧪 tested on fixtures/images only, 📋 planned (with a P262
   attributes, read README.txt, and a file the host wrote passed this crate's `check()` afterwards; two
   cargo-fuzz targets (garbage images, patched valid images) ran without a panic. Not yet checked: Windows
   chkdsk, macOS Disk Utility (a person's step with a real card).
+- 🧪 **FS-4 ring-file-upkeep**: what a device that writes a preallocated file by raw sector address needs to
+  keep it: `Volume::free_space` (free clusters and the longest free run in one bitmap pass, to place a ring
+  file on a card that already holds files) and `Volume::set_attributes` (rewrite a file's attribute bits and
+  its set checksum, to restore read-only/system/hidden). For `logring`'s LOG-3. P2628#16oct-1001d.
 - 📋 **FS-2 synth-virtual-volume**: `synth` — a read-only virtual exFAT volume rendered sector by sector from a
   directory model the caller provides (ghostfat-style), paired with `logring`'s VIEW-1. After FS-1. Needs
   `logring`'s LOG-2. P2628#16oct-1001f. Plan R8.

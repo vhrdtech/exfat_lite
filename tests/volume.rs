@@ -512,3 +512,59 @@ fn mounts_an_image_from_mkfs_exfat() {
     drop(vol);
     fsck_clean(&path);
 }
+
+#[test]
+fn free_space_finds_the_longest_run() {
+    let mut bytes = vec![0u8; 16 * MB as usize];
+    let geometry = Geometry {
+        sectors_per_cluster_shift: 3,
+        boundary_unit_sectors: 2048,
+    };
+    let mut dev = SliceDevice::new(&mut bytes);
+    let mut scratch = [0u8; 512];
+    block_on(format(
+        &mut dev,
+        &FormatParams::new(geometry, "FREE", 5),
+        &mut scratch,
+    ))
+    .unwrap();
+    let mut vol = block_on(Volume::mount(dev)).unwrap();
+    let fresh = block_on(vol.free_space()).unwrap();
+    assert_eq!(fresh.free_clusters, fresh.largest_run_len);
+    let cb = vol.info().cluster_bytes() as u64;
+    // a file in the middle splits the free space in two runs; the longer one is reported
+    let mid = fresh.largest_run_first + (fresh.largest_run_len / 3) as u32;
+    let f = block_on(vol.create(&NewFile::new("mid.bin").size(4 * cb).at_cluster(mid))).unwrap();
+    let split = block_on(vol.free_space()).unwrap();
+    assert_eq!(split.free_clusters, fresh.free_clusters - 4);
+    assert_eq!(split.largest_run_first, mid + 4);
+    assert_eq!(
+        split.largest_run_len,
+        fresh.largest_run_first as u64 + fresh.largest_run_len - (mid as u64 + 4)
+    );
+    block_on(vol.delete(&f)).unwrap();
+}
+
+#[test]
+fn set_attributes_rewrites_the_entry_set() {
+    let mut bytes = vec![0u8; 16 * MB as usize];
+    let dev = SliceDevice::new(&mut bytes);
+    let geometry = Geometry {
+        sectors_per_cluster_shift: 3,
+        boundary_unit_sectors: 2048,
+    };
+    let mut vol = populate(dev, geometry, "ATTR", 2 * MB);
+    let ring = block_on(vol.find("logring.wlr")).unwrap().unwrap();
+    let plain = block_on(vol.set_attributes(&ring, attr::ARCHIVE)).unwrap();
+    assert_eq!(plain.attributes, attr::ARCHIVE);
+    let found = block_on(vol.find("logring.wlr")).unwrap().unwrap();
+    assert_eq!(found.attributes, attr::ARCHIVE);
+    assert_eq!(found.first_cluster, ring.first_cluster);
+    assert!(block_on(vol.check(WalkLimits::DEFAULT)).unwrap().clean);
+    assert_eq!(
+        block_on(vol.set_attributes(&found, attr::DIRECTORY)).unwrap_err(),
+        Error::InvalidArgument
+    );
+    let back = block_on(vol.set_attributes(&found, ring.attributes)).unwrap();
+    assert_eq!(back.attributes, ring.attributes);
+}
