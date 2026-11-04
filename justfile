@@ -3,9 +3,9 @@
 default:
     @just --list
 
-# The tests. `just test`: all of them (test-all), the run of the `tpm land` gate. `just test --changed`: only the
-# workspace crates changed against main and the crates that depend on them (tpm test changed), what a session runs
-# before tpm work ready.
+# The tests. `just test`: all of them (test-all), the gate run before landing changes. `just test --changed`: only the
+# workspace crates changed against main and the crates that depend on them, what a session runs
+# before marking work ready.
 test *flags:
     if [ "{{flags}}" = "--changed" ]; then tpm test changed -- cargo nextest run --workspace; else {{just_executable()}} test-all {{flags}}; fi
 
@@ -29,6 +29,6 @@ fuzz TARGET="mount_patched" SECONDS="300":
 # Library only: nothing to install on this PC
 install: test
 
-# Bring this PC up to main
+# Bring this checkout up to main
 deploy:
     tpm repos pull exfat_lite

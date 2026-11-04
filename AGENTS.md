@@ -14,7 +14,7 @@ checked 16 Oct 2026), so it is its own repo, usable by anyone who needs a no-all
 A card is untrusted input: every parser here is bounded (no unbounded loops over a count a bad card can set
 arbitrarily high) and never panics on garbage, by design, not by luck — see "Tests" below.
 
-Sibling repos (tpm project P2628; design: `prj/P2628-logring/design/plan.md` in the tpm folder, not here):
+Sibling repos (design notes live in our internal project tracker, not here):
 [`logring`](https://github.com/vhrdtech/logring) (the ring log store that uses this crate),
 [`usb_msc_device`](https://github.com/vhrdtech/usb_msc_device) (the USB disk class logring serves over).
 
@@ -24,9 +24,9 @@ Sibling repos (tpm project P2628; design: `prj/P2628-logring/design/plan.md` in 
 
 - **Name IDs with a short slug when talking to the user**: `FS-1 format-mount`, never a bare `FS-1`. Commit
   messages, CHANGELOG and code `TODO`s keep the bare ID.
-- **New IDs**: `tpm work claim FS` prints the next free one. Never renumber or reuse IDs.
+- **New IDs**: pick the next unused `FS-N`. Never renumber or reuse IDs.
 - Status ✅ verified against `fsck.exfat`/a real OS mount; 🧪 unit-tested/fuzzed on images only; 📋 planned with a
-  P2628 task; 💡 an idea, not filed as a task yet.
+  task filed internally; 💡 an idea, not filed as a task yet.
 
 ## CHANGELOG.md records every change
 
@@ -92,13 +92,11 @@ Pure Rust only, no `-sys` crates, no `alloc`. Check new dependencies with `cargo
 Conventional Commits with a scope: `feat(format): ...`, `fix(mount): ...`, scopes `format`, `mount`, `walk`,
 `synth`, `build`. Short imperative summary, blank line, body with what and why; reference feature IDs.
 
-Commit on your own initiative on a session branch (`tpm work new SLUG exfat_lite`), each finished step one commit
-with FEATURES.md and CHANGELOG.md updated in it. When the work is done and the user agrees, `tpm land` puts it on
-main.
+Commit on your own initiative on a feature branch, each finished step one commit with FEATURES.md and
+CHANGELOG.md updated in it. When the work is done and the user agrees, land it on main.
 
 ## Versions
 
-Landing bumps the version, not each work commit (tpm CLAUDE.md "Landing bumps the version"): session commits add
-CHANGELOG entries under `[Unreleased]` without bumping. This repo's version is its next crates.io release
-(`bump = "at-publish"` in tpm's repos.toml): `tpm land` never bumps or tags it on its own; `tpm release exfat_lite`
-does, once there is something to publish.
+Landing bumps the version, not each work commit: session commits add CHANGELOG entries under `[Unreleased]`
+without bumping. This repo's version is its next crates.io release: landing never bumps or tags it on its own; a
+separate release step does, once there is something to publish.
