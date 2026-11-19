@@ -1,5 +1,8 @@
 # exfat_lite: a small no-alloc exFAT implementation for SD cards.
 
+# The pinned nightly of the fuzz and miri recipes; rust-toolchain.toml pins the stable one
+nightly := "nightly-2026-11-19"
+
 default:
     @just --list
 
@@ -24,7 +27,7 @@ lint:
 
 # Fuzz the mount/walk/create paths on patched and garbage images (nightly + cargo-fuzz); TARGET: mount or mount_patched
 fuzz TARGET="mount_patched" SECONDS="300":
-    cd fuzz && cargo +nightly fuzz run {{TARGET}} corpus/{{TARGET}} seeds/{{TARGET}} -- -max_total_time={{SECONDS}} -max_len=65536
+    cd fuzz && cargo +{{ nightly }} fuzz run {{TARGET}} corpus/{{TARGET}} seeds/{{TARGET}} -- -max_total_time={{SECONDS}} -max_len=65536
 
 # Library only: nothing to install on this PC
 install: test

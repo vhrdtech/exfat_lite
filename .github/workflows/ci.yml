@@ -42,11 +42,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-11-19
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-fuzz
-      - run: cd fuzz && cargo fuzz build
+      - run: cd fuzz && cargo +nightly-2026-11-19 fuzz build
 
   cargo-sort:
     runs-on: ubuntu-latest
